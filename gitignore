@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Ambientes e Segredos
+.env
+
+# Editores
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Meus Dados (Opcional - remova se quiser subir as planilhas)
+*.xlsx
+*.csv
