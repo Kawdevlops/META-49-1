@@ -31,7 +31,7 @@ subpref_map = {
     "ct": "cidade tiradentes",
     "cv": "casa verde/cachoeirinha",
     "em": "ermelino matarazzo",
-    "fo": "freguesia do ó/brasilândia",
+    "fb": "freguesia do ó/brasilândia",
     "g": "guaianases",
     "ip": "ipiranga",
     "iq": "itaquera",
