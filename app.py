@@ -101,6 +101,7 @@ def normalizar_sigla(sigla: str) -> str:
 def traduzir_sub(sigla: str) -> str:
     return subpref_map.get(normalizar_sigla(sigla), sigla)
 
+
 def numero_br_para_float(valor) -> float:
     if pd.isna(valor):
         return 0.0
@@ -171,34 +172,36 @@ def extrair_textos_docx(caminho_word: Path) -> list[str]:
 
 
 def ler_word_convias(caminho_word: Path, mes_ref: str) -> pd.DataFrame:
-    doc = Document(caminho_word)
+    textos = extrair_textos_docx(caminho_word)
+    textos_limpos = [t.strip() for t in textos if str(t).strip()]
 
     dados = []
+    i = 0
 
-    for tabela in doc.tables:
-        for row in tabela.rows:
-            cols = [cell.text.strip() for cell in row.cells]
+    while i < len(textos_limpos):
+        atual = padronizar_texto(textos_limpos[i])
 
-            if len(cols) < 3:
+        if atual == "total":
+            break
+
+        sigla_valida = re.fullmatch(r"[a-z]{1,3}", atual) is not None
+
+        if sigla_valida:
+            sigla = normalizar_sigla(atual)
+
+            if i + 1 < len(textos_limpos):
+                proximo = textos_limpos[i + 1].strip()
+                valor = numero_br_para_float(proximo)
+
+                dados.append({
+                    "sigla": sigla,
+                    "mês": mes_ref,
+                    "convias": valor
+                })
+                i += 2
                 continue
 
-            nome_sub = padronizar_texto(cols[0])
-            sigla = normalizar_sigla(cols[1])
-            valor_bruto = cols[2]
-
-            if sigla == "sigla":
-                continue
-
-            if not re.fullmatch(r"[a-z]{1,3}", sigla):
-                continue
-
-            valor = numero_br_para_float(valor_bruto)
-
-            dados.append({
-                "sigla": sigla,
-                "mês": mes_ref,
-                "convias": valor
-            })
+        i += 1
 
     df = pd.DataFrame(dados)
 
@@ -207,7 +210,6 @@ def ler_word_convias(caminho_word: Path, mes_ref: str) -> pd.DataFrame:
 
     df["sigla"] = df["sigla"].apply(normalizar_sigla)
     df["convias"] = df["convias"].apply(numero_br_para_float)
-
     df = df.groupby(["sigla", "mês"], as_index=False)["convias"].sum()
 
     return df
@@ -319,7 +321,6 @@ def montar_df_consemavi(ano_ref: int, caminho_excel: Path) -> pd.DataFrame:
     df_longo["consemavi"] = df_longo["consemavi"].apply(numero_br_para_float)
 
     return df_longo
-
 
 def montar_df_final(
     caminho_word: Path,
@@ -454,22 +455,25 @@ def aplicar_formato_brasileiro(ws, linha, coluna):
     if not celula_e_mesclada(ws, linha, coluna):
         ws.cell(linha, coluna).number_format = '#,##0.00'
 
-
 def preencher_excel_formatado(
     df_final: pd.DataFrame,
     caminho_modelo: Path,
     caminho_saida: Path
 ) -> Path:
+    # 1. Carrega o arquivo mantendo a formatação original
     wb = openpyxl.load_workbook(caminho_modelo)
     ws = localizar_aba_meta49(wb)
 
+    # 2. Mapeia onde as colunas (meses) e linhas (siglas/indicadores) estão
     mapa_meses, col_total = localizar_colunas(ws)
     mapa_linhas = localizar_linhas(ws)
 
+    # 3. Preenche os dados do DataFrame no Excel
     for _, row in df_final.iterrows():
         sigla = normalizar_sigla(row["sigla"])
         mes = padronizar_texto(row["mês"])
 
+        # Ignora a linha de total do DataFrame, pois vamos recalcular no Excel
         if sigla == "total":
             continue
 
@@ -477,56 +481,51 @@ def preencher_excel_formatado(
         if not col:
             continue
 
-        for tipo, coluna_valor in [
+        # Distribui os valores nas linhas correspondentes (Total, Convias, Consemavi)
+        mapeamento_valores = [
             ("total", "total requalificado"),
             ("convias", "convias"),
             ("consemavi", "consemavi"),
-        ]:
-            linha = mapa_linhas.get((sigla, tipo))
-            if linha:
-                valor_num = numero_br_para_float(row[coluna_valor])
-                escrever_se_possivel(ws, linha, col, valor_num)
-                aplicar_formato_brasileiro(ws, linha, col)
+        ]
 
+        for tipo, coluna_origem in mapeamento_valores:
+            linha_excel = mapa_linhas.get((sigla, tipo))
+            if linha_excel:
+                escrever_se_possivel(ws, linha_excel, col, row[coluna_origem])
+
+    # 4. Recalcula os totais horizontais (Soma dos meses por linha)
     for (sigla, tipo), lin in mapa_linhas.items():
         if sigla == "total":
             continue
 
         soma_linha = sum(safe_float(ws.cell(lin, c).value) for c in mapa_meses.values())
         escrever_se_possivel(ws, lin, col_total, soma_linha)
-        aplicar_formato_brasileiro(ws, lin, col_total)
 
+    # 5. Localiza a linha de rodapé "Total Meses" para somas verticais
     linha_total_meses = localizar_linha_total_meses(ws)
 
-    if linha_total_meses and linha_total_meses + 1 <= ws.max_row:
-        valores_prox = [
-            padronizar_texto(ws.cell(linha_total_meses + 1, c).value)
-            for c in range(1, min(ws.max_column, 6) + 1)
-        ]
-        if any(v == "total" for v in valores_prox):
+    if linha_total_meses:
+        # Limpa possíveis textos residuais de 'total' abaixo da linha principal
+        if linha_total_meses + 1 <= ws.max_row:
             limpar_linha(ws, linha_total_meses + 1)
 
-    if linha_total_meses:
-        escrever_se_possivel(ws, linha_total_meses, 1, "total meses:")
+        escrever_se_possivel(ws, linha_total_meses, 1, "TOTAL MESES:")
 
-        soma_geral_meses = 0
-
-        for _, col in mapa_meses.items():
-            total_mes = 0
-
+        soma_geral_anual = 0
+        for mes_nome, col_idx in mapa_meses.items():
+            total_do_mes = 0
+            # Soma apenas as linhas do tipo "total" de cada subprefeitura
             for (sigla, tipo), lin in mapa_linhas.items():
-                if sigla == "total":
-                    continue
-                if tipo == "total":
-                    total_mes += safe_float(ws.cell(lin, col).value)
+                if sigla != "total" and tipo == "total":
+                    total_do_mes += safe_float(ws.cell(lin, col_idx).value)
 
-            escrever_se_possivel(ws, linha_total_meses, col, total_mes)
-            aplicar_formato_brasileiro(ws, linha_total_meses, col)
-            soma_geral_meses += total_mes
+            escrever_se_possivel(ws, linha_total_meses, col_idx, total_do_mes)
+            soma_geral_anual += total_do_mes
 
-        escrever_se_possivel(ws, linha_total_meses, col_total, soma_geral_meses)
-        aplicar_formato_brasileiro(ws, linha_total_meses, col_total)
+        # Preenche o total do total (canto inferior direito)
+        escrever_se_possivel(ws, linha_total_meses, col_total, soma_geral_anual)
 
+    # 6. Salva o resultado final
     wb.save(caminho_saida)
     return caminho_saida
 

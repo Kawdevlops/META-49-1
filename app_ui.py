@@ -149,27 +149,32 @@ def carregar_preview_excel_completo(caminho_excel: Path):
 
     return df, nome_aba
 
-
 def formatar_numero_br(valor):
     if pd.isna(valor) or valor == "":
         return ""
 
+    # número real
     if isinstance(valor, (int, float)):
         return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     texto = str(valor).strip()
 
-    if "," in texto:
+    # se já está formatado em brasileiro, mantém
+    if re.fullmatch(r"\d{1,3}(\.\d{3})*,\d{2}", texto):
         return texto
 
+    # tenta converter texto para número
     try:
-        num = float(texto)
+        if "," in texto:
+            num = float(texto.replace(".", "").replace(",", "."))
+        else:
+            num = float(texto)
         return f"{num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except:
+    except Exception:
         return texto
-
-
+    
 def dataframe_para_html_com_cabecalho(df: pd.DataFrame):
+    # Remove linhas que sejam apenas "Total" repetido (limpeza visual)
     df = df.loc[
         ~df.apply(
             lambda row: row.astype(str).str.lower().str.contains("total").sum() > 6,
@@ -180,6 +185,7 @@ def dataframe_para_html_com_cabecalho(df: pd.DataFrame):
     if df.empty:
         return '<div class="preview-wrapper">tabela vazia</div>'
 
+    # Define cabeçalho e corpo baseado na estrutura da planilha Meta 49
     if len(df) >= 3:
         cabecalho = df.iloc[2].fillna("").tolist()
         corpo = df.iloc[3:].copy()
@@ -189,29 +195,31 @@ def dataframe_para_html_com_cabecalho(df: pd.DataFrame):
 
     html = ['<div class="preview-wrapper"><table class="preview-table">']
 
+    # Gerar Cabeçalho
     html.append("<thead><tr>")
     for valor in cabecalho:
         texto = "" if pd.isna(valor) else str(valor)
         html.append(f"<th>{texto}</th>")
     html.append("</tr></thead>")
 
+    # Gerar Corpo com formatação numérica brasileira
     html.append("<tbody>")
     for _, row in corpo.iterrows():
         html.append("<tr>")
         for valor in row:
+            # AQUI ESTÁ A MUDANÇA: Usamos a sua função formatar_numero_br
             texto = formatar_numero_br(valor)
             html.append(f"<td>{texto}</td>")
         html.append("</tr>")
     html.append("</tbody>")
+    
     html.append("</table></div>")
-
     return "".join(html)
-
 
 with st.sidebar:
     st.markdown("<h2 style='color:#ff007f; text-align:center;'>⚙️ painel</h2>", unsafe_allow_html=True)
 
-    ano_sel = st.selectbox("📅 selecione o ano", options=[2025, 2026], index=0)
+    ano_sel = st.selectbox("📅 selecione o ano", options=[2026, 2025], index=0)
 
     opcoes_meses = ["todos os meses"] + meses
     mes_sel = st.selectbox("🗓️ selecione o mês", options=opcoes_meses, index=1)

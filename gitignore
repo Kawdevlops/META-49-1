@@ -18,3 +18,5 @@ Thumbs.db
 # Meus Dados (Opcional - remova se quiser subir as planilhas)
 *.xlsx
 *.csv
+
+temp_inputs/
