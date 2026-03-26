@@ -15,8 +15,15 @@ from app import (
     gerar_relatorio_final,
 )
 
+import base64
 
-st.set_page_config(page_title="gerador meta 49", layout="wide")
+def carregar_imagem_base64(caminho):
+    with open(caminho, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+img_base64 = carregar_imagem_base64("img\logo.png")
+
+st.set_page_config(page_title="Monitor de Metas Institucionais", layout="wide")
 
 st.markdown("""
 <style>
@@ -183,7 +190,7 @@ def dataframe_para_html_com_cabecalho(df: pd.DataFrame):
     ]
 
     if df.empty:
-        return '<div class="preview-wrapper">tabela vazia</div>'
+        return '<div class="preview-wrapper">Tabela vazia</div>'
 
     # Define cabeçalho e corpo baseado na estrutura da planilha Meta 49
     if len(df) >= 3:
@@ -217,37 +224,44 @@ def dataframe_para_html_com_cabecalho(df: pd.DataFrame):
     return "".join(html)
 
 with st.sidebar:
-    st.markdown("<h2 style='color:#ff007f; text-align:center;'>⚙️ painel</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color:#ff007f; text-align:center;'> Painel</h2>", unsafe_allow_html=True)
 
-    ano_sel = st.selectbox("📅 selecione o ano", options=[2026, 2025], index=0)
+    ano_sel = st.selectbox(" Selecione o ano", options=[2026, 2025], index=0)
 
-    opcoes_meses = ["todos os meses"] + meses
-    mes_sel = st.selectbox("🗓️ selecione o mês", options=opcoes_meses, index=1)
-
-    st.divider()
-
-    st.caption("se não enviar arquivo, o app usa os arquivos padrão da pasta data.")
-    word_file = st.file_uploader("📂 carregar word convias (docx)", type=["docx"])
-    excel_file = st.file_uploader("📂 carregar excel consemavi (xlsx)", type=["xlsx"])
+    opcoes_meses = ["Todos os meses"] + meses
+    mes_sel = st.selectbox(" Selecione o mês", options=opcoes_meses, index=1)
 
     st.divider()
-    btn_gerar = st.button("🚀 gerar relatório")
 
-st.markdown("""
-<div class="header-banner">
-    <h1 style="margin:0;">meta 49 - previsão de recapeamento</h1>
-    <p style="margin:0; opacity: 0.9;">kauany violin - coplan-dados</p>
+    st.caption("Se não enviar arquivo, o app usa os arquivos padrão da pasta data.")
+    word_file = st.file_uploader(" Carregar word convias (docx)", type=["docx"])
+    excel_file = st.file_uploader(" Carregar excel consemavi (xlsx)", type=["xlsx"])
+
+    st.divider()
+    btn_gerar = st.button(" Gerar relatório")
+
+st.markdown(f"""
+<div class="header-banner" style="
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:15px;
+    padding:20px;
+    background: linear-gradient(90deg, #ff007f, #ff69b4);
+    border-radius:12px;
+">
+    <img src="data:image/png;base64,{img_base64}" width="120">
+    <div>
+        <h1 style="margin:0; color:white; align-items:center;"> Monitor de Metas Municipais</h1>
+        <p style="margin:0; opacity:0.7; color:white;">Coplan-Dados</p>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
-st.info(
-    f"arquivos padrão atuais: word = {arquivo_word_padrao.name} | "
-    f"consemavi = {arquivo_consemavi_padrao.name} | "
-    f"modelo fixo do sistema = {arquivo_modelo_padrao.name}"
-)
+
 
 if btn_gerar:
-    with st.spinner("lendo arquivos, validando somas e preenchendo o modelo..."):
+    with st.spinner("Lendo arquivos, validando somas e preenchendo o modelo..."):
         try:
             caminho_word = salvar_upload(word_file, temp_dir) if word_file else arquivo_word_padrao
             caminho_excel = salvar_upload(excel_file, temp_dir) if excel_file else arquivo_consemavi_padrao
@@ -264,14 +278,14 @@ if btn_gerar:
             caminho_final = Path(caminho_final)
 
             if caminho_final.exists():
-                st.success("✅ excel atualizado com sucesso!")
-                st.info(f"📍 arquivo salvo em: {caminho_final.absolute()}")
-                st.session_state["arquivo_gerado"] = str(caminho_final)
+                st.success("Excel atualizado com sucesso!")
+                st.info(f"Arquivo salvo em: {caminho_final.absolute()}")
+                st.session_state["Arquivo_gerado"] = str(caminho_final)
             else:
-                st.error("erro: arquivo gerado não encontrado.")
+                st.error("Erro: arquivo gerado não encontrado.")
 
         except Exception as e:
-            st.error(f"erro ao gerar relatório: {e}")
+            st.error(f"Erro ao gerar relatório: {e}")
 
 if "arquivo_gerado" in st.session_state:
     caminho_preview = Path(st.session_state["arquivo_gerado"])
@@ -280,7 +294,7 @@ if "arquivo_gerado" in st.session_state:
         try:
             df_preview, aba_nome = carregar_preview_excel_completo(caminho_preview)
 
-            st.markdown(f"### 📋 preview do arquivo gerado - aba `{aba_nome}`")
+            st.markdown(f"### Preview do arquivo gerado - aba `{aba_nome}`")
 
             html_tabela = dataframe_para_html_com_cabecalho(df_preview)
             st.markdown(html_tabela, unsafe_allow_html=True)
@@ -289,13 +303,13 @@ if "arquivo_gerado" in st.session_state:
 
             with open(caminho_preview, "rb") as f:
                 st.download_button(
-                    label="💾 baixar excel gerado",
+                    label="Baixar excel gerado",
                     data=f,
                     file_name=caminho_preview.name,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
         except Exception as e:
-            st.error(f"erro ao exibir o arquivo gerado: {e}")
+            st.error(f"Erro ao exibir o arquivo gerado: {e}")
 else:
-    st.info("👈 selecione o período e clique em gerar relatório.")
+    st.info("Selecione o período e clique em gerar relatório.")

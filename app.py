@@ -78,7 +78,6 @@ sigla_aliases = {
     "fb": "fo",
 }
 
-
 def padronizar_texto(texto) -> str:
     if pd.isna(texto):
         return ""
@@ -91,10 +90,8 @@ def padronizar_texto(texto) -> str:
 def normalizar_sigla(sigla: str) -> str:
     if pd.isna(sigla):
         return ""
-
     s = str(sigla).strip().lower()
     s = re.sub(r"\s+", "", s)
-
     return sigla_aliases.get(s, s)
 
 
@@ -105,28 +102,20 @@ def traduzir_sub(sigla: str) -> str:
 def numero_br_para_float(valor) -> float:
     if pd.isna(valor):
         return 0.0
-
     # se já é número de verdade, retorna direto
     if isinstance(valor, (int, float)):
         return float(valor)
-
     texto = str(valor).strip()
-
     if texto in {"", "-", "–", "—", "nan", "None"}:
         return 0.0
-
     texto = texto.replace("m²", "").replace("M²", "").replace("m2", "").strip()
-
     # caso 1: formato brasileiro -> 3.041,30
     if "," in texto:
         texto = texto.replace(".", "").replace(",", ".")
-
     # caso 2: formato normal -> 3041.30
     texto = re.sub(r"[^0-9.\-]", "", texto)
-
     if texto in {"", "-", ".", "-."}:
         return 0.0
-
     try:
         return float(texto)
     except ValueError:
@@ -141,58 +130,46 @@ def safe_float(valor) -> float:
 
 def classificar_indicador(texto: str) -> Optional[str]:
     t = padronizar_texto(texto)
-
     if "convias" in t:
         return "convias"
     if "consemavi" in t:
         return "consemavi"
     if "total" in t and "requalificado" in t:
         return "total"
-
     return None
 
 
 def extrair_textos_docx(caminho_word: Path) -> list[str]:
     doc = Document(caminho_word)
     textos = []
-
     for p in doc.paragraphs:
         t = p.text.strip()
         if t:
             textos.append(t)
-
     for tabela in doc.tables:
         for row in tabela.rows:
             for cell in row.cells:
                 t = cell.text.strip()
                 if t:
                     textos.append(t)
-
     return textos
 
 
 def ler_word_convias(caminho_word: Path, mes_ref: str) -> pd.DataFrame:
     textos = extrair_textos_docx(caminho_word)
     textos_limpos = [t.strip() for t in textos if str(t).strip()]
-
     dados = []
     i = 0
-
     while i < len(textos_limpos):
         atual = padronizar_texto(textos_limpos[i])
-
         if atual == "total":
             break
-
         sigla_valida = re.fullmatch(r"[a-z]{1,3}", atual) is not None
-
         if sigla_valida:
             sigla = normalizar_sigla(atual)
-
             if i + 1 < len(textos_limpos):
                 proximo = textos_limpos[i + 1].strip()
                 valor = numero_br_para_float(proximo)
-
                 dados.append({
                     "sigla": sigla,
                     "mês": mes_ref,
@@ -200,7 +177,6 @@ def ler_word_convias(caminho_word: Path, mes_ref: str) -> pd.DataFrame:
                 })
                 i += 2
                 continue
-
         i += 1
 
     df = pd.DataFrame(dados)
