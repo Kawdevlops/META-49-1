@@ -84,14 +84,23 @@ div[data-testid="stFileUploaderDropzone"] p { display: none !important; }
 }
 .preview-table th,
 .preview-table td {
-    border: 1px solid #e5e7eb;
-    padding: 4px 6px;
+    border: 1px solid #d1d5db;
+    padding: 6px 8px;
     text-align: left;
     max-width: 140px;
     min-width: 90px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: #111827 !important;
+}
+
+.preview-table td {
+    background-color: #ffffff !important;
+}
+
+.preview-table tr:nth-child(even) td {
+    background-color: #f9fafb !important;
 }
 .preview-table th {
     background-color: #fdf2f8;
@@ -233,12 +242,28 @@ with st.sidebar:
 
     st.divider()
 
-    st.caption("Se não enviar arquivo, o app usa os arquivos padrão da pasta data.")
     word_file = st.file_uploader(" Carregar word convias (docx)", type=["docx"])
     excel_file = st.file_uploader(" Carregar excel consemavi (xlsx)", type=["xlsx"])
 
     st.divider()
     btn_gerar = st.button(" Gerar relatório")
+
+        # CONTROLE DE MUDANÇA DE PERÍODO
+    if "mes_anterior" not in st.session_state:
+        st.session_state["mes_anterior"] = mes_sel
+
+    if "ano_anterior" not in st.session_state:
+        st.session_state["ano_anterior"] = ano_sel
+
+    mudou_periodo = (
+        st.session_state["mes_anterior"] != mes_sel or
+        st.session_state["ano_anterior"] != ano_sel
+    )
+
+    if mudou_periodo:
+        st.session_state["mes_anterior"] = mes_sel
+        st.session_state["ano_anterior"] = ano_sel
+        st.session_state.pop("arquivo_gerado", None)
 
 st.markdown(f"""
 <div class="header-banner" style="
@@ -260,12 +285,12 @@ st.markdown(f"""
 
 
 
-if btn_gerar:
+if btn_gerar or mudou_periodo:
     with st.spinner("Lendo arquivos, validando somas e preenchendo o modelo..."):
         try:
             caminho_word = salvar_upload(word_file, temp_dir) if word_file else arquivo_word_padrao
             caminho_excel = salvar_upload(excel_file, temp_dir) if excel_file else arquivo_consemavi_padrao
-            caminho_saida = exit_dir / "meta49_preenchido.xlsx"
+            caminho_saida = exit_dir / f"meta49_{ano_sel}_{mes_sel}.xlsx"
 
             caminho_final = gerar_relatorio_final(
                 ano_ref=ano_sel,
@@ -280,7 +305,9 @@ if btn_gerar:
             if caminho_final.exists():
                 st.success("Excel atualizado com sucesso!")
                 st.info(f"Arquivo salvo em: {caminho_final.absolute()}")
-                st.session_state["Arquivo_gerado"] = str(caminho_final)
+                st.session_state["arquivo_gerado"] = str(caminho_final)
+                st.session_state["mes_gerado"] = mes_sel
+                st.session_state["ano_gerado"] = ano_sel
             else:
                 st.error("Erro: arquivo gerado não encontrado.")
 
@@ -294,22 +321,12 @@ if "arquivo_gerado" in st.session_state:
         try:
             df_preview, aba_nome = carregar_preview_excel_completo(caminho_preview)
 
-            st.markdown(f"### Preview do arquivo gerado - aba `{aba_nome}`")
+            st.markdown(
+                f"### Preview do arquivo gerado - {st.session_state.get('mes_gerado', '')}/{st.session_state.get('ano_gerado', '')} - aba `{aba_nome}`"
+            )
 
             html_tabela = dataframe_para_html_com_cabecalho(df_preview)
             st.markdown(html_tabela, unsafe_allow_html=True)
 
-            st.divider()
-
-            with open(caminho_preview, "rb") as f:
-                st.download_button(
-                    label="Baixar excel gerado",
-                    data=f,
-                    file_name=caminho_preview.name,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
         except Exception as e:
             st.error(f"Erro ao exibir o arquivo gerado: {e}")
-else:
-    st.info("Selecione o período e clique em gerar relatório.")

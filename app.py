@@ -22,7 +22,7 @@ arquivo_modelo_padrao = data_dir / "Meta49-formatado.xlsx"
 arquivo_word_padrao = data_dir / "Meta 49 - Janeiro-2026 - CONVIAS.docx"
 arquivo_saida_padrao = exit_dir / "meta49_preenchido.xlsx"
 
-subpref_map = {
+meses_abrev_para_nome = {
     "ad": "cidade ademar",
     "af": "aricanduva/formosa/carrão",
     "bt": "butantã",
@@ -86,6 +86,43 @@ def padronizar_texto(texto) -> str:
     texto = re.sub(r"\s+", " ", texto)
     return texto
 
+meses_abrev_para_nome = {
+    padronizar_texto(abrev): nome
+    for nome, abrev in meses_map.items()
+}
+
+def normalizar_mes(texto_mes: str) -> str:
+    t = padronizar_texto(texto_mes)
+
+    if t in meses:
+        return t
+
+    if t in meses_abrev_para_nome:
+        return meses_abrev_para_nome[t]
+
+    return t
+
+
+def extrair_mes_do_docx(textos: list[str]) -> str:
+    """
+    Procura no Word algo como:
+    Fev/2026, Mar/2026, Abr/2026...
+    e devolve o mês por extenso:
+    fevereiro, março, abril...
+    """
+    padrao = re.compile(
+        r"\b(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)\s*/\s*\d{4}\b",
+        re.IGNORECASE
+    )
+
+    for texto in textos:
+        achado = padrao.search(str(texto))
+        if achado:
+            mes_abrev = padronizar_texto(achado.group(1))
+            return meses_abrev_para_nome.get(mes_abrev, mes_abrev)
+
+    raise ValueError("não foi possível identificar o mês no arquivo word do convias.")
+
 
 def normalizar_sigla(sigla: str) -> str:
     if pd.isna(sigla):
@@ -96,7 +133,7 @@ def normalizar_sigla(sigla: str) -> str:
 
 
 def traduzir_sub(sigla: str) -> str:
-    return subpref_map.get(normalizar_sigla(sigla), sigla)
+    return meses_abrev_para_nome.get(normalizar_sigla(sigla), sigla)
 
 
 def numero_br_para_float(valor) -> float:
@@ -155,28 +192,49 @@ def extrair_textos_docx(caminho_word: Path) -> list[str]:
     return textos
 
 
-def ler_word_convias(caminho_word: Path, mes_ref: str) -> pd.DataFrame:
+def ler_word_convias(caminho_word: Path, mes_ref: str | None = None) -> pd.DataFrame:
     textos = extrair_textos_docx(caminho_word)
     textos_limpos = [t.strip() for t in textos if str(t).strip()]
+
+    # descobre o mês direto do Word: Fev/2026 -> fevereiro
+    mes_doc = extrair_mes_do_docx(textos_limpos)
+
+    # se vier mês do selectbox, normaliza também
+    mes_ref_norm = normalizar_mes(mes_ref) if mes_ref else None
+
+    # regra:
+    # - se o usuário escolheu "Todos os meses", usa o mês do doc
+    # - se escolheu um mês específico, usa o mês do doc para gravar
+    #   e depois a filtragem geral decide se bate ou não
+    mes_usado = mes_doc
+
     dados = []
     i = 0
+
     while i < len(textos_limpos):
         atual = padronizar_texto(textos_limpos[i])
+
         if atual == "total":
             break
+
         sigla_valida = re.fullmatch(r"[a-z]{1,3}", atual) is not None
+
         if sigla_valida:
             sigla = normalizar_sigla(atual)
+
             if i + 1 < len(textos_limpos):
                 proximo = textos_limpos[i + 1].strip()
                 valor = numero_br_para_float(proximo)
+
                 dados.append({
                     "sigla": sigla,
-                    "mês": mes_ref,
+                    "mês": mes_usado,
                     "convias": valor
                 })
+
                 i += 2
                 continue
+
         i += 1
 
     df = pd.DataFrame(dados)
@@ -186,6 +244,8 @@ def ler_word_convias(caminho_word: Path, mes_ref: str) -> pd.DataFrame:
 
     df["sigla"] = df["sigla"].apply(normalizar_sigla)
     df["convias"] = df["convias"].apply(numero_br_para_float)
+    df["mês"] = df["mês"].apply(normalizar_mes)
+
     df = df.groupby(["sigla", "mês"], as_index=False)["convias"].sum()
 
     return df
@@ -307,10 +367,10 @@ def montar_df_final(
     df_convias = ler_word_convias(caminho_word, mes_ref)
     df_consemavi = montar_df_consemavi(ano_ref, caminho_consemavi)
 
-    mes_ref_norm = padronizar_texto(mes_ref)
+    mes_ref_norm = normalizar_mes(mes_ref)
 
     if mes_ref_norm != "todos os meses":
-        df_convias = df_convias[df_convias["mês"] == mes_ref].copy()
+        df_convias = df_convias[df_convias["mês"] == mes_ref_norm].copy()
         df_consemavi = df_consemavi[df_consemavi["mês"] == mes_ref_norm].copy()
 
     df_convias["sigla"] = df_convias["sigla"].apply(normalizar_sigla)
@@ -333,7 +393,7 @@ def montar_df_final(
     total_geral = pd.DataFrame({
         "subprefeitura": ["total geral"],
         "sigla": ["total"],
-        "mês": ["anual" if mes_ref_norm == "todos os meses" else mes_ref],
+        "mês": ["anual" if mes_ref_norm == "todos os meses" else mes_ref_norm],
         "convias": [df_final["convias"].sum()],
         "consemavi": [df_final["consemavi"].sum()],
         "total requalificado": [df_final["total requalificado"].sum()],
