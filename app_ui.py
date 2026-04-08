@@ -21,7 +21,7 @@ def carregar_imagem_base64(caminho):
     with open(caminho, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
-img_base64 = carregar_imagem_base64("img\logo.png")
+img_base64 = carregar_imagem_base64("img/logo.png")
 
 st.set_page_config(page_title="Monitor de Metas Institucionais", layout="wide")
 
